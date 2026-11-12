@@ -92,6 +92,28 @@ h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
 .qty button{width:64px;height:56px;font-size:28px;font-weight:800;background:#eee}
 .qty span{font-size:28px;font-weight:800;min-width:50px;text-align:center}
 .mgo{width:100%;height:64px}
+/* 스캔 리스트 +/− */
+.row .adj{width:50px;height:46px;font-size:28px;font-weight:800;background:#eef3ff;color:var(--blue);padding:0;margin-left:8px}
+.row .adj.m{background:#f4f4f4;color:#555}
+.row.ad .q{min-width:40px;text-align:center}
+
+/* 한 장에 여러 개 */
+#multiBtn{display:block;width:100%;margin:0 0 12px;background:#fff;border:2px solid var(--blue);color:var(--blue);font-size:19px;font-weight:800;padding:16px}
+#multi{position:fixed;inset:0;z-index:20;background:#fff;display:none;flex-direction:column}
+#multi.on{display:flex}
+#multi .body{flex:1;overflow-y:auto;padding:12px 14px}
+#mCv{width:100%;display:block;border-radius:12px;background:#000}
+#mHead{font-size:22px;font-weight:900;margin:12px 2px 8px}
+#mHead small{display:block;font-size:14px;color:#666;font-weight:600;margin-top:4px}
+#mList .row .q{color:var(--green)}
+#mList .bad{color:var(--red);font-size:15px;padding:10px 16px}
+#multi .btns{display:flex;gap:12px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid #eee}
+#mRetake{flex:0 0 34%;background:#eee;color:#333;font-size:18px;font-weight:700}
+#mSave{flex:1;height:96px;background:var(--green);color:#fff;font-size:26px;font-weight:900}
+#mSave:disabled{background:#bbb}
+#mBusy{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.6);color:#fff;display:none;align-items:center;justify-content:center;font-size:24px;font-weight:800}
+#mBusy.on{display:flex}
+
 #toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;z-index:30;display:none;max-width:90vw}
 </style></head><body>
 
@@ -118,6 +140,7 @@ h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
       <div id="camOff"><div id="camMsg">구역을 고르면 카메라가 켜져요</div><button id="camBtn">📷 카메라 켜기</button></div>
     </div>
     <div id="hint">초록 네모 <b>안에 바코드 하나만</b> 넣으세요 (밖은 안 읽어요)</div>
+    <button id="multiBtn">📸 한 장에 여러 개 찍기</button>
     <div id="zoneTotal"><span>이 구역에서 찍은 재고</span><b id="zoneSum">0개</b></div>
     <div id="scanList"></div>
     <button id="lastUndo" style="display:none">↩ 마지막 스캔 취소</button>
@@ -156,6 +179,17 @@ h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
   <button class="mgo" id="mGo">기록하기</button>
   <button class="close" data-close>닫기</button>
 </div></div>
+
+<!-- 한 장에 여러 개: 결과 확인 -->
+<div id="multi">
+  <div class="body">
+    <canvas id="mCv"></canvas>
+    <div id="mHead"></div>
+    <div id="mList" class="card"></div>
+  </div>
+  <div class="btns"><button id="mRetake">↺ 다시 찍기</button><button id="mSave">저장</button></div>
+</div>
+<div id="mBusy">📸 읽는 중…</div>
 
 <div id="toast"></div>
 
@@ -209,11 +243,15 @@ function group(scans, withZero){
 function sum(scans){ return scans.reduce(function(a, s){ return a + s.qty; }, 0); }
 
 /* ---------- 그리기 ---------- */
-function prodCard(p, key, showZero){
-  var has = p.colors.filter(function(c){ return c.qty > 0; });
+function prodCard(p, key, showZero, adj){
+  var has = p.colors.filter(function(c){ return adj ? c.qty !== 0 || c.code === hitCode : c.qty > 0; });
   var zero = p.colors.filter(function(c){ return c.qty === 0; });
   var h = '<div class="card"><div class="hd"><span class="t">' + esc(p.name) + '</span><span class="q">' + p.total + '개</span></div>';
-  has.forEach(function(c){ h += '<div class="row' + (c.code === hitCode ? ' hit' : '') + '"><span class="c">' + esc(c.color) + '</span><span class="q">' + c.qty + '</span></div>'; });
+  has.forEach(function(c){
+    h += '<div class="row' + (c.code === hitCode ? ' hit' : '') + (adj ? ' ad' : '') + '"><span class="c">' + esc(c.color) + '</span>';
+    if (adj) h += '<button class="adj m" data-adj="' + esc(c.code) + '" data-d="-1">−</button><span class="q">' + c.qty + '</span><button class="adj" data-adj="' + esc(c.code) + '" data-d="1">＋</button></div>';
+    else h += '<span class="q">' + c.qty + '</span></div>';
+  });
   if (showZero && zero.length) {
     if (openZero[key]) zero.forEach(function(c){ h += '<div class="row zero"><span class="c">' + esc(c.color) + '</span><span class="q">0</span></div>'; });
     h += '<button class="more" data-zero="' + esc(key) + '">' + (openZero[key] ? '0개 색상 접기 ▲' : '0개인 색상 ' + zero.length + '개 보기 ▼') + '</button>';
@@ -244,10 +282,11 @@ function render(){
   var mine = all.filter(function(s){ return s.zone === zone; });
   $('zoneSum').textContent = sum(mine) + '개';
   var g2 = group(mine, false);
-  $('scanList').innerHTML = !zone ? '' : (g2.length ? g2.map(function(p){ return prodCard(p, '', false); }).join('') : '<div class="empty">아직 찍은 재고 없음</div>');
+  $('scanList').innerHTML = !zone ? '' : (g2.length ? g2.map(function(p){ return prodCard(p, '', false, true); }).join('') : '<div class="empty">아직 찍은 재고 없음</div>');
   $('lastUndo').style.display = hist.length ? 'block' : 'none';
 }
 document.addEventListener('click', function(e){
+  var a = e.target.closest('[data-adj]'); if (a) { adjust(a.getAttribute('data-adj'), +a.getAttribute('data-d')); return; }
   var b = e.target.closest('[data-zero]'); if (!b) return;
   var k = b.getAttribute('data-zero'); openZero[k] = !openZero[k]; render();
 });
@@ -369,6 +408,25 @@ function undo(rec){
     });
   }).catch(function(e){ toast('취소 실패: ' + e.message); });
 }
+// 스캔 리스트 +/− : 시트에 +1 / −1 줄을 추가 (화면 전환 없이)
+function saveRec(rec){
+  LOCAL.push(rec); ver++; inflight++;
+  rec.p = api({ action: 'add', code: rec.code, qty: rec.qty, zone: rec.zone }).then(function(r){
+    rec.row = r.start; rec.done = true; hist.push(rec); render();
+  }).catch(function(e){
+    rec.undone = true; rec.fail = true; toast('저장 실패: ' + e.message); beep(false); render();
+  }).then(function(){ inflight--; });
+  return rec.p;
+}
+function adjust(code, d){
+  if (!zone) return;
+  if (d < 0 && zoneQty(code) <= 0) { toast('이미 0개예요'); return; }
+  hitCode = code;
+  saveRec({ zone: zone, code: code, qty: d, done: false, undone: false });
+  if (navigator.vibrate) navigator.vibrate(40);
+  render();
+  toast(info(code).color + ' ' + (d > 0 ? '+1' : '−1') + ' → ' + zoneQty(code) + '개');
+}
 function next(){
   $('result').className = ''; cur = null; paused = false; hitCode = null; render();
 }
@@ -474,6 +532,107 @@ function stopCam(){
 }
 $('camBtn').onclick = function(){ if (!zone) openSheet('zoneSheet'); else startCam(); };
 document.addEventListener('visibilitychange', function(){ if (document.hidden) stopCam(); else if (slide === 2 && zone) startCam(); });
+
+/* ---------- 한 장에 여러 개 ---------- */
+// 사진 한 장에서 바코드를 모두 찾아, 같은 위치는 한 번만 센다 (같은 색상이라도 위치가 다르면 각각 1개)
+var MF = null;   // {img, found:[{code,x,y,w,h}]}
+async function grabPhoto(){
+  try {
+    if (stream && 'ImageCapture' in window) {
+      var blob = await new ImageCapture(stream.getVideoTracks()[0]).takePhoto();
+      return await createImageBitmap(blob);
+    }
+  } catch(e){}
+  var v = $('v'), c = document.createElement('canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+  return c;
+}
+async function detectAll(img){
+  var W = img.width, H = img.height, found = [];
+  function add(list, ox, oy, s){
+    (list || []).forEach(function(b){
+      var bb = b.boundingBox, f = { code: b.rawValue, x: ox + bb.x / s, y: oy + bb.y / s, w: bb.width / s, h: bb.height / s };
+      var cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+      var dup = found.some(function(o){
+        var r = Math.max(o.w, o.h, f.w, f.h) * 0.5;
+        return o.code === f.code && Math.abs(o.x + o.w / 2 - cx) < r && Math.abs(o.y + o.h / 2 - cy) < r;
+      });
+      if (!dup) found.push(f);
+    });
+  }
+  add(await detector.detect(img), 0, 0, 1);
+  // 작게 찍힌 바코드도 잡도록 겹치게 잘라서 확대해 한 번 더
+  var tw = W * 0.6, th = H * 0.45, s = Math.min(2, 2000 / tw);
+  var cv = document.createElement('canvas'), cx2 = cv.getContext('2d');
+  cv.width = Math.round(tw * s); cv.height = Math.round(th * s);
+  var xs = [0, W - tw], ys = [0, (H - th) / 2, H - th];
+  for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
+    cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, cv.width, cv.height);
+    cx2.drawImage(img, xs[i], ys[j], tw, th, 0, 0, cv.width, cv.height);
+    try { add(await detector.detect(cv), xs[i], ys[j], s); } catch(e){}
+  }
+  return found;
+}
+async function multiShot(){
+  if (!zone) { openSheet('zoneSheet'); return; }
+  if (!detector) { toast('이 휴대폰 브라우저는 여러 개 읽기를 못 해요 (안드로이드 크롬 필요)'); return; }
+  if (!running || !stream) { toast('카메라를 먼저 켜세요'); return; }
+  paused = true;
+  $('mBusy').classList.add('on');
+  try {
+    var img = await grabPhoto();
+    var found = await detectAll(img);
+    MF = { img: img, found: found };
+    if (navigator.vibrate) navigator.vibrate(found.length ? 200 : [400, 150, 400]);
+    showMulti();
+  } catch(e){
+    toast('사진 읽기 실패: ' + (e && e.message || e)); paused = false;
+  }
+  $('mBusy').classList.remove('on');
+}
+function showMulti(){
+  var img = MF.img, found = MF.found, cv = $('mCv');
+  var cw = Math.min(img.width, 1400), sc = cw / img.width;
+  cv.width = cw; cv.height = Math.round(img.height * sc);
+  var g = cv.getContext('2d');
+  g.drawImage(img, 0, 0, cv.width, cv.height);
+  g.lineWidth = Math.max(4, cw / 160);
+  found.forEach(function(f){
+    var ok = !!CMAP[f.code];
+    g.strokeStyle = ok ? '#22e07a' : '#ff3b30';
+    g.fillStyle = ok ? 'rgba(34,224,122,.25)' : 'rgba(255,59,48,.25)';
+    g.fillRect(f.x * sc, f.y * sc, f.w * sc, f.h * sc);
+    g.strokeRect(f.x * sc, f.y * sc, f.w * sc, f.h * sc);
+  });
+  var known = found.filter(function(f){ return CMAP[f.code]; }), unk = found.length - known.length;
+  var cnt = {}; known.forEach(function(f){ cnt[f.code] = (cnt[f.code] || 0) + 1; });
+  MF.cnt = cnt;
+  $('mHead').innerHTML = known.length
+    ? '초록 표시 ' + known.length + '개 읽음<small>사진에서 <b>표시 안 된 바코드</b>가 있으면 저장 후 하나씩 찍어 주세요 · 구역 ' + esc(zone) + '</small>'
+    : '읽은 바코드가 없어요<small>조금 더 가까이, 밝은 곳에서 다시 찍어 보세요</small>';
+  var h = '';
+  group(Object.keys(cnt).map(function(c){ return { zone: zone, code: c, qty: cnt[c] }; }), false).forEach(function(p){
+    h += '<div class="hd"><span class="t">' + esc(p.name) + '</span><span class="q">' + p.total + '개</span></div>';
+    p.colors.forEach(function(c){ h += '<div class="row"><span class="c">' + esc(c.color) + '</span><span class="q">+' + c.qty + '</span></div>'; });
+  });
+  if (unk) h += '<div class="bad">빨간 표시 ' + unk + '개: 상품목록에 없는 바코드 (저장 안 함)</div>';
+  $('mList').innerHTML = h;
+  $('mList').style.display = h ? '' : 'none';
+  $('mSave').disabled = !known.length;
+  $('mSave').textContent = known.length ? '저장 ' + known.length + '개 ▶' : '저장할 것 없음';
+  $('multi').classList.add('on');
+}
+function closeMulti(){ $('multi').classList.remove('on'); MF = null; paused = false; }
+$('multiBtn').onclick = multiShot;
+$('mRetake').onclick = function(){ closeMulti(); multiShot(); };
+$('mSave').onclick = function(){
+  if (!MF || !MF.cnt) return;
+  var cnt = MF.cnt, n = 0, z = zone;
+  this.disabled = true;
+  Object.keys(cnt).forEach(function(code){ n += cnt[code]; saveRec({ zone: z, code: code, qty: cnt[code], done: false, undone: false }); });
+  closeMulti(); render();
+  beep(true); toast(n + '개 저장 중… (취소는 아래 「마지막 스캔 취소」)');
+};
 
 render(); load();
 setInterval(function(){ if (!document.hidden) load(); }, 15000);
