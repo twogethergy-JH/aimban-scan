@@ -1,214 +1,454 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
 <title>AIMBAN 재고 스캔</title>
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#111;color:#eee}
-#top{padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-button{font-size:16px;padding:10px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff}
-button.gray{background:#444}
-button.red{background:#c0392b}
-button:disabled{opacity:.45}
-#camwrap{position:relative;background:#000;display:none}
-video{width:100%;max-height:45vh;object-fit:cover;display:block}
-#guide{position:absolute;left:10%;right:10%;top:40%;height:20%;border:3px solid rgba(0,255,120,.8);border-radius:8px;pointer-events:none}
-#last{margin:8px 12px;padding:14px;border-radius:12px;background:#222;font-size:22px;font-weight:700;min-height:60px}
-#last.ok{background:#1e7e34}
-#last.bad{background:#b03a2e}
-#last small{display:block;font-size:13px;font-weight:400;opacity:.85;margin-top:4px}
-#row2{display:flex;gap:8px;padding:0 12px;align-items:center}
-#row2 input{font-size:18px;padding:8px;border-radius:8px;border:0}
-#manual{flex:1;min-width:0}
-#qty{width:70px;text-align:center}
-#status{padding:4px 12px;font-size:13px;opacity:.8}
-table{width:100%;border-collapse:collapse;font-size:15px}
-td{padding:7px 12px;border-bottom:1px solid #2a2a2a}
-td.n{text-align:right;font-weight:700;width:70px}
-tr.hit td{background:#1e4d2b}
-#total{padding:8px 12px;font-weight:700;font-size:17px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#f2f3f5;color:#111;font-size:17px}
+button{font-family:inherit;border:0;border-radius:14px;cursor:pointer;touch-action:manipulation}
+button:active{transform:scale(.97)}
+:root{--nav:72px;--green:#12a150;--red:#d6332a;--blue:#1f5fd6}
+
+/* 슬라이드 */
+#slides{position:fixed;top:0;left:0;right:0;bottom:calc(var(--nav) + env(safe-area-inset-bottom));display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none}
+#slides::-webkit-scrollbar{display:none}
+.slide{flex:0 0 100%;height:100%;overflow-y:auto;scroll-snap-align:start;scroll-snap-stop:always;padding:14px 14px 30px}
+h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
+
+/* 하단 탭 */
+#nav{position:fixed;left:0;right:0;bottom:0;height:calc(var(--nav) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:flex;background:#fff;border-top:1px solid #ddd;z-index:5}
+#nav button{flex:1;background:none;border-radius:0;font-size:15px;font-weight:700;color:#888;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+#nav button b{font-size:24px;line-height:1}
+#nav button.on{color:var(--blue)}
+
+/* 카드·리스트 */
+.big{background:#fff;border-radius:18px;padding:20px;text-align:center;margin-bottom:14px}
+.big .n{font-size:64px;font-weight:800;line-height:1.05}
+.big .l{color:#666;font-size:16px}
+.card{background:#fff;border-radius:16px;margin-bottom:12px;overflow:hidden}
+.card .hd{display:flex;align-items:center;gap:8px;padding:14px 16px;font-weight:700;font-size:17px;border-bottom:1px solid #eee}
+.card .hd .t{flex:1;min-width:0}
+.card .hd .q{font-size:22px;font-weight:800;color:var(--blue)}
+.row{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f1f1f1;font-size:18px}
+.row:last-child{border-bottom:0}
+.row .c{flex:1}
+.row .q{font-weight:800;font-size:20px;min-width:48px;text-align:right}
+.row.zero{color:#aaa}
+.row.zero .q{font-weight:400}
+.row.hit{background:#dff5e7}
+.more{display:block;width:100%;background:#fafafa;color:#555;border-radius:0;padding:12px;font-size:15px}
+.zone .hd{background:#eef3ff}
+.zone .card{margin:10px 10px 10px;border:1px solid #eee}
+.empty{color:#888;text-align:center;padding:30px 10px}
+
+/* 스캔 화면 */
+#zoneBar{display:flex;gap:10px;margin-bottom:10px}
+#zoneBtn{flex:1;background:#fff;text-align:left;padding:12px 16px;font-size:20px;font-weight:800;border:2px solid var(--blue);color:#111}
+#zoneBtn small{display:block;font-size:13px;color:#666;font-weight:600}
+#manualBtn{background:#fff;font-size:15px;padding:0 14px;border:1px solid #ccc;color:#333}
+#cam{position:relative;background:#000;border-radius:16px;overflow:hidden;height:34vh;min-height:200px}
+#cam video{width:100%;height:100%;object-fit:cover;display:block}
+#cam .line{position:absolute;left:8%;right:8%;top:50%;height:3px;background:#ff3b30;box-shadow:0 0 8px #ff3b30;pointer-events:none}
+#cam .box{position:absolute;left:8%;right:8%;top:30%;bottom:30%;border:3px solid rgba(255,255,255,.85);border-radius:10px;pointer-events:none}
+#camOff{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#fff;padding:16px;text-align:center}
+#camOff button{background:var(--blue);color:#fff;font-size:20px;font-weight:800;padding:18px 26px}
+#hint{text-align:center;color:#555;font-size:15px;margin:8px 0 12px}
+#lastUndo{display:block;margin:0 auto 12px;background:#fff;border:1px solid #ccc;color:#333;font-size:15px;padding:10px 16px}
+#zoneTotal{display:flex;justify-content:space-between;align-items:baseline;margin:6px 2px 10px}
+#zoneTotal b{font-size:26px}
+
+/* 전체화면 결과 */
+#result{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;color:#fff;padding:calc(20px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom))}
+#result.ok{display:flex;background:var(--green)}
+#result.bad{display:flex;background:var(--red)}
+#result .ic{font-size:76px;font-weight:900;line-height:1;text-align:center;margin-top:4vh}
+#result .color{font-size:46px;font-weight:900;text-align:center;line-height:1.15;margin-top:2vh;word-break:keep-all}
+#result .prod{font-size:16px;text-align:center;opacity:.9;margin-top:8px}
+#result .cnt{margin:4vh auto 0;background:rgba(255,255,255,.2);border-radius:16px;padding:14px 22px;text-align:center;font-size:17px}
+#result .cnt b{display:block;font-size:44px;font-weight:900}
+#result .st{text-align:center;font-size:14px;opacity:.85;margin-top:12px}
+#result .btns{margin-top:auto;display:flex;gap:12px;align-items:stretch}
+#rUndo{flex:0 0 30%;background:rgba(0,0,0,.25);color:#fff;font-size:17px;font-weight:700;padding:0 6px}
+#rNext{flex:1;background:#fff;font-size:30px;font-weight:900;height:120px}
+#result.ok #rNext{color:var(--green)}
+#result.bad #rNext{color:var(--red)}
+
+/* 시트(구역 선택·직접 입력) */
+.sheet{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
+.sheet.on{display:flex}
+.sheet .in{background:#fff;width:100%;border-radius:22px 22px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto}
+.sheet h3{margin:0 0 14px;font-size:20px}
+.zgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.zgrid button{background:#eef3ff;color:#111;font-size:19px;font-weight:800;padding:20px 8px;border:2px solid transparent;word-break:break-all}
+.zgrid button.on{border-color:var(--blue);background:#dbe6ff}
+.newz{display:flex;gap:10px}
+.newz input,#mCode{flex:1;min-width:0;font-size:20px;padding:14px;border:2px solid #ccc;border-radius:14px}
+.newz button,.mgo{background:var(--blue);color:#fff;font-size:18px;font-weight:800;padding:0 20px}
+.close{display:block;width:100%;margin-top:14px;background:#eee;color:#333;font-size:17px;padding:16px}
+.qty{display:flex;align-items:center;gap:10px;margin:14px 0}
+.qty button{width:64px;height:56px;font-size:28px;font-weight:800;background:#eee}
+.qty span{font-size:28px;font-weight:800;min-width:50px;text-align:center}
+.mgo{width:100%;height:64px}
+#toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;z-index:30;display:none;max-width:90vw}
 </style></head><body>
-<div id="top">
-  <button id="startBtn">📷 카메라 시작</button>
-  <button id="stopBtn" class="gray" style="display:none">정지</button>
-  <button class="gray" type="button" onclick="document.getElementById('photo').click()">사진으로</button>
-  <input id="photo" type="file" accept="image/*" capture="environment" style="display:none">
-  <button id="undoBtn" class="red" disabled>↩ 방금 것 취소</button>
+
+<div id="slides">
+  <!-- 1. 전체 재고 -->
+  <section class="slide" id="s0">
+    <div class="big"><div class="l">전체 재고</div><div class="n" id="allTotal">–</div><div class="l" id="sync">불러오는 중…</div></div>
+    <div id="allList"></div>
+  </section>
+  <!-- 2. 구역별 -->
+  <section class="slide" id="s1">
+    <h2>구역별 재고</h2>
+    <div id="zoneList"></div>
+  </section>
+  <!-- 3. 스캔 -->
+  <section class="slide" id="s2">
+    <div id="zoneBar">
+      <button id="zoneBtn"><small>지금 구역 (눌러서 바꾸기)</small><span id="zoneName">구역 선택</span></button>
+      <button id="manualBtn">⌨<br>직접</button>
+    </div>
+    <div id="cam">
+      <video id="v" playsinline muted></video>
+      <div class="box"></div><div class="line"></div>
+      <div id="camOff"><div id="camMsg">구역을 고르면 카메라가 켜져요</div><button id="camBtn">📷 카메라 켜기</button></div>
+    </div>
+    <div id="hint">빨간 선에 바코드를 맞추세요</div>
+    <div id="zoneTotal"><span>이 구역에서 찍은 재고</span><b id="zoneSum">0개</b></div>
+    <div id="scanList"></div>
+    <button id="lastUndo" style="display:none">↩ 마지막 스캔 취소</button>
+  </section>
 </div>
-<div id="camwrap"><video id="v" playsinline muted></video><div id="guide"></div></div>
-<div id="last">바코드를 비추세요</div>
-<div id="row2">
-  <input id="manual" inputmode="numeric" placeholder="직접 입력 / 스캐너 (엔터)">
-  <span>수량</span><input id="qty" type="number" min="1" value="1">
+
+<nav id="nav">
+  <button data-i="0" class="on"><b>📦</b>전체</button>
+  <button data-i="1"><b>🗂</b>구역별</button>
+  <button data-i="2"><b>📷</b>스캔</button>
+</nav>
+
+<!-- 스캔 결과 (전체화면) -->
+<div id="result">
+  <div class="ic" id="rIc">✓</div>
+  <div class="color" id="rColor"></div>
+  <div class="prod" id="rProd"></div>
+  <div class="cnt" id="rCnt"></div>
+  <div class="st" id="rSt"></div>
+  <div class="btns"><button id="rUndo">↩ 취소</button><button id="rNext">다음 ▶</button></div>
 </div>
-<div id="status">불러오는 중…</div>
-<div id="total"></div>
-<table id="list"></table>
+
+<!-- 구역 선택 -->
+<div class="sheet" id="zoneSheet"><div class="in">
+  <h3>구역 선택</h3>
+  <div class="zgrid" id="zgrid"></div>
+  <div class="newz"><input id="newZone" placeholder="새 구역 이름 (예: A-1)"><button id="newZoneBtn">만들기</button></div>
+  <button class="close" data-close>닫기</button>
+</div></div>
+
+<!-- 직접 입력 -->
+<div class="sheet" id="manSheet"><div class="in">
+  <h3>바코드 직접 입력</h3>
+  <input id="mCode" inputmode="numeric" placeholder="바코드 숫자">
+  <div class="qty"><span style="font-size:17px;font-weight:600;min-width:auto">수량</span><button id="qMinus">−</button><span id="qVal">1</span><button id="qPlus">＋</button></div>
+  <button class="mgo" id="mGo">기록하기</button>
+  <button class="close" data-close>닫기</button>
+</div></div>
+
+<div id="toast"></div>
+
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script>
 var API = 'https://script.google.com/macros/s/AKfycbwXAU2l7IycLGX_NiY7xMhbINn7lMiPaEQce6IfXmS5Pfui7ehSAzik4Rov8NzGVe8/exec';
-var LIST = [], MAP = {}, pending = {}, hist = [];
-var lastCode = '', lastSeen = 0, stream = null, detector = null, zxReader = null, running = false;
+var UNKNOWN = '⚠ 목록에 없는 바코드';
 var $ = function(id){ return document.getElementById(id); };
+var CAT = [], CMAP = {}, ZONES = [], SCANS = [];   // SCANS: 서버 합계 [{zone,code,qty}]
+var LOCAL = [];         // 아직 서버 새로고침에 반영 안 된 내 기록 {zone,code,qty,row,done,undone}
+var hist = [];          // 취소용
+var zone = ''; try { zone = localStorage.getItem('aimbanZone') || ''; } catch(e){}
+var slide = 0, inflight = 0, ver = 0;
+var paused = false, blockCode = null, seenAt = {}, hitCode = null;
+var stream = null, detector = null, zxReader = null, running = false;
+var openZero = {};
 
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function toast(t){ var e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(function(){ e.style.display = 'none'; }, 2500); }
 function api(params){
   var q = Object.keys(params).map(function(k){ return k + '=' + encodeURIComponent(params[k]); }).join('&');
   return fetch(API + '?' + q + '&t=' + Date.now(), { redirect: 'follow' })
     .then(function(r){ return r.json(); })
-    .then(function(d){ if (!d.ok && d.error) throw new Error(d.error); return d; });
+    .then(function(d){ if (!d.ok) throw new Error(d.error || '실패'); return d; });
 }
 
-function setStatus(t){ $('status').textContent = t; }
-
-function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
-
-function render(hit){
-  var rows = '', total = 0;
-  LIST.forEach(function(p){
-    var q = p.qty + (pending[p.code] || 0); total += q;
-    rows += '<tr class="' + (p.code === hit ? 'hit' : '') + '"><td>' + esc(p.name) + '<br><small style="opacity:.6">' + esc(p.code) + '</small></td><td class="n">' + q + '</td></tr>';
+/* ---------- 데이터 ---------- */
+function allScans(){
+  var m = {};
+  SCANS.concat(LOCAL.filter(function(x){ return !x.undone; })).forEach(function(s){
+    var k = s.zone + '\t' + s.code; m[k] = (m[k] || 0) + s.qty;
   });
-  $('list').innerHTML = rows;
-  $('total').textContent = '합계 ' + total + '개';
+  return Object.keys(m).map(function(k){ var p = k.split('\t'); return { zone: p[0], code: p[1], qty: m[k] }; });
 }
+function info(code){ return CMAP[code] || { product: UNKNOWN, color: code, code: code }; }
+// scans → [{name,total,colors:[{color,code,qty}]}] (상품목록 순서)
+function group(scans, withZero){
+  var q = {}, prods = [], P = {};
+  scans.forEach(function(s){ q[s.code] = (q[s.code] || 0) + s.qty; });
+  function prod(name){ if (!P[name]) { P[name] = { name: name, total: 0, colors: [] }; prods.push(P[name]); } return P[name]; }
+  CAT.forEach(function(c){
+    var n = q[c.code] || 0;
+    if (n || withZero) { var p = prod(c.product); p.colors.push({ color: c.color, code: c.code, qty: n }); p.total += n; }
+  });
+  Object.keys(q).forEach(function(code){
+    if (CMAP[code] || !q[code]) return;
+    var p = prod(UNKNOWN); p.colors.push({ color: code, code: code, qty: q[code] }); p.total += q[code];
+  });
+  return prods;
+}
+function sum(scans){ return scans.reduce(function(a, s){ return a + s.qty; }, 0); }
+
+/* ---------- 그리기 ---------- */
+function prodCard(p, key, showZero){
+  var has = p.colors.filter(function(c){ return c.qty > 0; });
+  var zero = p.colors.filter(function(c){ return c.qty === 0; });
+  var h = '<div class="card"><div class="hd"><span class="t">' + esc(p.name) + '</span><span class="q">' + p.total + '개</span></div>';
+  has.forEach(function(c){ h += '<div class="row' + (c.code === hitCode ? ' hit' : '') + '"><span class="c">' + esc(c.color) + '</span><span class="q">' + c.qty + '</span></div>'; });
+  if (showZero && zero.length) {
+    if (openZero[key]) zero.forEach(function(c){ h += '<div class="row zero"><span class="c">' + esc(c.color) + '</span><span class="q">0</span></div>'; });
+    h += '<button class="more" data-zero="' + esc(key) + '">' + (openZero[key] ? '0개 색상 접기 ▲' : '0개인 색상 ' + zero.length + '개 보기 ▼') + '</button>';
+  }
+  return h + '</div>';
+}
+function render(){
+  var all = allScans();
+  // 1. 전체
+  $('allTotal').textContent = sum(all) + '개';
+  var h = '';
+  group(all, true).forEach(function(p){ h += prodCard(p, 'all:' + p.name, true); });
+  $('allList').innerHTML = h || '<div class="empty">상품목록이 비어 있어요</div>';
+  // 2. 구역별
+  var zs = ZONES.slice();
+  all.forEach(function(s){ if (zs.indexOf(s.zone) < 0) zs.push(s.zone); });
+  h = '';
+  zs.forEach(function(z){
+    var sc = all.filter(function(s){ return s.zone === z; });
+    h += '<div class="card zone"><div class="hd"><span class="t">📍 ' + esc(z) + '</span><span class="q">' + sum(sc) + '개</span></div>';
+    var g = group(sc, false);
+    h += g.length ? g.map(function(p){ return prodCard(p, '', false); }).join('') : '<div class="empty">아직 찍은 재고 없음</div>';
+    h += '</div>';
+  });
+  $('zoneList').innerHTML = h || '<div class="empty">구역이 없어요. 스캔 화면에서 구역을 만드세요.</div>';
+  // 3. 스캔 (지금 구역만)
+  $('zoneName').textContent = zone || '구역 선택';
+  var mine = all.filter(function(s){ return s.zone === zone; });
+  $('zoneSum').textContent = sum(mine) + '개';
+  var g2 = group(mine, false);
+  $('scanList').innerHTML = !zone ? '' : (g2.length ? g2.map(function(p){ return prodCard(p, '', false); }).join('') : '<div class="empty">아직 찍은 재고 없음</div>');
+  $('lastUndo').style.display = hist.length ? 'block' : 'none';
+}
+document.addEventListener('click', function(e){
+  var b = e.target.closest('[data-zero]'); if (!b) return;
+  var k = b.getAttribute('data-zero'); openZero[k] = !openZero[k]; render();
+});
 
 function load(){
-  api({ action: 'list' }).then(function(d){
-    LIST = d.list; MAP = {}; LIST.forEach(function(p){ MAP[p.code] = p; });
-    render(); setStatus('시트와 동기화됨 ' + new Date().toLocaleTimeString());
-  }).catch(function(e){ setStatus('목록 불러오기 실패: ' + e.message); });
+  if (inflight) return;
+  var v0 = ver;
+  api({ action: 'data' }).then(function(d){
+    if (inflight || ver !== v0) return;   // 그 사이에 찍었으면 다음 새로고침에 반영
+    CAT = d.catalog; CMAP = {}; CAT.forEach(function(c){ CMAP[c.code] = c; });
+    ZONES = d.zones; SCANS = d.scans;
+    LOCAL = LOCAL.filter(function(x){ return !x.done && !x.undone; });
+    render();
+    $('sync').textContent = '시트와 맞춤 ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  }).catch(function(e){ $('sync').textContent = '불러오기 실패: ' + e.message; });
 }
 
+/* ---------- 슬라이드 ---------- */
+var S = $('slides');
+function go(i){ S.scrollTo({ left: i * S.clientWidth, behavior: 'smooth' }); }
+Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function(b){ b.onclick = function(){ go(+b.dataset.i); }; });
+S.addEventListener('scroll', function(){
+  var i = Math.round(S.scrollLeft / S.clientWidth);
+  if (i === slide) return;
+  slide = i;
+  Array.prototype.forEach.call(document.querySelectorAll('#nav button'), function(b){ b.classList.toggle('on', +b.dataset.i === i); });
+  if (i === 2) { if (!zone) openSheet('zoneSheet'); else startCam(); }
+  else stopCam();
+});
+
+/* ---------- 구역 ---------- */
+function openSheet(id){
+  if (id === 'zoneSheet') {
+    var zs = ZONES.slice(); allScans().forEach(function(s){ if (zs.indexOf(s.zone) < 0) zs.push(s.zone); });
+    $('zgrid').innerHTML = zs.map(function(z){ return '<button class="' + (z === zone ? 'on' : '') + '" data-z="' + esc(z) + '">' + esc(z) + '</button>'; }).join('') || '';
+  }
+  $(id).classList.add('on');
+}
+function closeSheets(){ Array.prototype.forEach.call(document.querySelectorAll('.sheet'), function(s){ s.classList.remove('on'); }); }
+Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function(b){ b.onclick = closeSheets; });
+$('zoneBtn').onclick = function(){ openSheet('zoneSheet'); };
+function setZone(z){
+  zone = z; try { localStorage.setItem('aimbanZone', z); } catch(e){}
+  closeSheets(); render(); toast('구역: ' + z);
+  if (slide === 2) startCam();
+}
+$('zgrid').onclick = function(e){ var b = e.target.closest('[data-z]'); if (b) setZone(b.getAttribute('data-z')); };
+$('newZoneBtn').onclick = function(){
+  var n = $('newZone').value.trim(); if (!n) { $('newZone').focus(); return; }
+  if (ZONES.indexOf(n) < 0) ZONES.push(n);
+  $('newZone').value = '';
+  setZone(n);
+  api({ action: 'addZone', name: n }).catch(function(e){ toast('구역 저장 실패: ' + e.message); });
+};
+$('newZone').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('newZoneBtn').click(); });
+
+/* ---------- 기록 ---------- */
 var ac = null;
 function beep(ok){
   try {
     ac = ac || new (window.AudioContext || window.webkitAudioContext)();
     var o = ac.createOscillator(), g = ac.createGain();
-    o.frequency.value = ok ? 1500 : 300; o.connect(g); g.connect(ac.destination);
-    g.gain.value = 0.15; o.start(); o.stop(ac.currentTime + (ok ? 0.08 : 0.35));
+    o.type = ok ? 'sine' : 'square'; o.frequency.value = ok ? 1800 : 220; o.connect(g); g.connect(ac.destination);
+    g.gain.value = ok ? 0.2 : 0.15; o.start(); o.stop(ac.currentTime + (ok ? 0.12 : 0.5));
   } catch(e){}
-  if (navigator.vibrate) navigator.vibrate(ok ? 40 : [100,60,100]);
+  if (navigator.vibrate) navigator.vibrate(ok ? 200 : [400, 150, 400]);
 }
+function zoneQty(code){ return allScans().filter(function(s){ return s.zone === zone && s.code === code; }).reduce(function(a, s){ return a + s.qty; }, 0); }
 
-function record(raw){
+function showResult(rec){
+  var it = info(rec.code), known = !!CMAP[rec.code];
+  var R = $('result');
+  R.className = (known && !rec.fail) ? 'ok' : 'bad';
+  $('rIc').textContent = rec.fail ? '✕' : (known ? '✓' : '⚠');
+  $('rColor').textContent = rec.fail ? '기록 실패' : (known ? it.color : '목록에 없는 바코드');
+  $('rProd').textContent = rec.fail ? '다시 찍어주세요' : (known ? it.product : rec.code + ' (시트에는 기록됨)');
+  $('rCnt').innerHTML = rec.fail ? esc(rec.err || '') : (esc(zone) + ' 구역 이 색상<b>' + zoneQty(rec.code) + '개</b>' + (rec.qty > 1 ? '(방금 +' + rec.qty + ')' : ''));
+  $('rSt').textContent = rec.fail ? '' : (rec.done ? '✔ 시트에 저장됨' : '저장 중…');
+  $('rUndo').style.visibility = rec.fail ? 'hidden' : 'visible';
+  $('rUndo').disabled = false;
+}
+var cur = null;
+function record(raw, qty){
   var code = String(raw || '').replace(/\s/g, '');
   if (!code) return;
-  if (code.length === 12 && MAP['0' + code]) code = '0' + code;
-  var qty = Math.max(1, parseInt($('qty').value, 10) || 1);
-  $('qty').value = 1;
-  var p = MAP[code];
-  var el = $('last');
-  if (p) { el.className = 'ok'; el.innerHTML = esc(p.name) + (qty > 1 ? ' ×' + qty : '') + ' <small>' + esc(code) + ' · 기록 중…</small>'; beep(true); }
-  else { el.className = 'bad'; el.innerHTML = '⚠ 목록에 없음' + (qty > 1 ? ' ×' + qty : '') + ' <small>' + esc(code) + ' · 시트에는 기록됨</small>'; beep(false); }
-  pending[code] = (pending[code] || 0) + qty;
-  render(code);
-  api({ action: 'add', code: code, qty: qty }).then(function(r){
-    hist.push({ row: r.start, code: code, qty: qty });
-    $('undoBtn').disabled = false;
-    var sm = el.querySelector('small');
-    if (p && sm) sm.textContent = code + ' · 기록됨 (' + r.start + '행)';
-    if (MAP[code]) MAP[code].qty += qty;
-    pending[code] -= qty; render(code);
-  }).catch(function(e){
-    pending[code] -= qty; render();
-    el.className = 'bad'; el.innerHTML = '기록 실패! 다시 찍어주세요 <small>' + esc(e.message) + '</small>'; beep(false);
-  });
-}
-
-function onDetected(code){
-  var now = Date.now();
-  // 같은 바코드는 화면에서 0.8초 이상 사라졌다가 다시 보여야 한 번 더 셈
-  if (code === lastCode && now - lastSeen < 800) { lastSeen = now; return; }
-  lastCode = code; lastSeen = now;
-  record(code);
-}
-
-$('undoBtn').onclick = function(){
-  var h = hist.pop(); if (!h) return;
-  $('undoBtn').disabled = hist.length === 0;
-  api({ action: 'undo', row: h.row, code: h.code }).then(function(d){
-    var ok = d.ok;
-    if (ok && MAP[h.code]) MAP[h.code].qty -= h.qty;
-    $('last').className = ''; $('last').innerHTML = ok ? '취소함: ' + esc((MAP[h.code] || {}).name || h.code) + ' <small>' + h.row + '행 지움</small>' : '취소 못함 (그 줄이 바뀜)';
+  if (!zone) { openSheet('zoneSheet'); toast('먼저 구역을 고르세요'); return; }
+  if (code.length === 12 && CMAP['0' + code]) code = '0' + code;
+  qty = qty || 1;
+  paused = true; blockCode = code; ver++;
+  var rec = { zone: zone, code: code, qty: qty, done: false, undone: false };
+  LOCAL.push(rec); cur = rec; hitCode = code;
+  beep(!!CMAP[code]);
+  showResult(rec); render();
+  inflight++;
+  rec.p = api({ action: 'add', code: code, qty: qty, zone: zone }).then(function(r){
+    rec.row = r.start; rec.done = true; hist.push(rec);
+    if (cur === rec) $('rSt').textContent = '✔ 시트에 저장됨';
     render();
-  }).catch(function(e){ $('last').className = 'bad'; $('last').innerHTML = '취소 실패 <small>' + esc(e.message) + '</small>'; });
-};
-
-$('manual').addEventListener('keydown', function(e){
-  if (e.key === 'Enter') { e.preventDefault(); record(this.value); this.value = ''; }
+  }).catch(function(e){
+    rec.undone = true; rec.fail = true; rec.err = e.message;
+    beep(false);
+    if (cur === rec) showResult(rec);
+    render();
+  }).then(function(){ inflight--; });
+}
+function undo(rec){
+  if (!rec || rec.undone) return Promise.resolve();
+  return (rec.p || Promise.resolve()).then(function(){
+    if (!rec.row || rec.undone) return;
+    return api({ action: 'undo', row: rec.row, code: rec.code }).then(function(d){
+      if (d.ok) {
+        rec.undone = true; ver++;
+        hist = hist.filter(function(h){ return h !== rec; });
+        // 이미 서버 합계에 들어갔으면 거기서도 뺀다
+        if (LOCAL.indexOf(rec) < 0) SCANS.forEach(function(s){ if (s.zone === rec.zone && s.code === rec.code) s.qty -= rec.qty; });
+        toast('취소함: ' + info(rec.code).color);
+      } else toast('취소 못함 (그 줄이 바뀜)');
+      render();
+    });
+  }).catch(function(e){ toast('취소 실패: ' + e.message); });
+}
+function next(){
+  $('result').className = ''; cur = null; paused = false; hitCode = null; render();
+}
+$('rNext').onclick = next;
+$('rUndo').onclick = function(){ this.disabled = true; var r = cur; undo(r).then(next); };
+$('lastUndo').onclick = function(){ undo(hist[hist.length - 1]); };
+document.addEventListener('keydown', function(e){
+  if ($('result').className && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); }
 });
 
+/* ---------- 직접 입력 ---------- */
+var mq = 1;
+$('manualBtn').onclick = function(){ mq = 1; $('qVal').textContent = 1; openSheet('manSheet'); setTimeout(function(){ $('mCode').focus(); }, 100); };
+$('qMinus').onclick = function(){ mq = Math.max(1, mq - 1); $('qVal').textContent = mq; };
+$('qPlus').onclick = function(){ mq++; $('qVal').textContent = mq; };
+$('mGo').onclick = function(){ var c = $('mCode').value; if (!c.trim()) return; $('mCode').value = ''; closeSheets(); record(c, mq); };
+$('mCode').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('mGo').click(); });
+
+/* ---------- 카메라 ---------- */
+// 같은 바코드는 화면에서 0.5초 이상 사라졌다가 다시 보여야 다시 셈 (다음 ▶ 누른 뒤에도)
+function onCode(code){
+  var now = Date.now(), prev = seenAt[code] || 0; seenAt[code] = now;
+  if (paused) return;
+  if (code === blockCode && now - prev < 500) return;
+  record(code, 1);
+}
 async function startCam(){
-  $('camwrap').style.display = 'block';
-  $('startBtn').style.display = 'none'; $('stopBtn').style.display = '';
+  if (running || !zone) return;
   running = true;
+  $('camMsg').textContent = '카메라 켜는 중…'; $('camBtn').style.display = 'none';
   var formats = ['ean_13', 'ean_8', 'upc_a', 'code_128'];
   try {
-    if ('BarcodeDetector' in window) {
+    if (!detector && 'BarcodeDetector' in window) {
       var sup = await BarcodeDetector.getSupportedFormats();
       if (sup.indexOf('ean_13') >= 0) detector = new BarcodeDetector({ formats: formats.filter(function(f){ return sup.indexOf(f) >= 0; }) });
     }
   } catch(e){ detector = null; }
   try {
+    var v = $('v');
     if (detector) {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-      var v = $('v'); v.srcObject = stream; await v.play();
-      setStatus('카메라 켜짐 (기본 인식기)');
+      if (!running) { stopCam(); return; }
+      v.srcObject = stream; await v.play();
+      $('camOff').style.display = 'none';
       var loop = async function(){
         if (!running) return;
-        try { var r = await detector.detect(v); if (r && r.length) onDetected(r[0].rawValue); } catch(e){}
-        setTimeout(loop, 80);
+        try {
+          var r = await detector.detect(v);
+          if (r && r.length) {
+            // 가운데(빨간 선 근처) 바코드만, 가장 가까운 것 하나
+            var H = v.videoHeight || 1, best = null, bd = 1;
+            r.forEach(function(b){ var bb = b.boundingBox, cy = (bb.y + bb.height / 2) / H, d = Math.abs(cy - 0.5); if (d < 0.22 && d < bd) { bd = d; best = b; } });
+            if (best) onCode(best.rawValue);
+          }
+        } catch(e){}
+        setTimeout(loop, 70);
       };
       loop();
     } else {
       var hints = new Map();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.CODE_128]);
-      zxReader = new ZXing.BrowserMultiFormatReader(hints, 150);
-      await zxReader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, $('v'), function(res){
-        if (res) onDetected(res.getText());
-      });
-      setStatus('카메라 켜짐 (ZXing)');
+      zxReader = new ZXing.BrowserMultiFormatReader(hints, 120);
+      await zxReader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, v, function(res){ if (res) onCode(res.getText()); });
+      if (!running) { stopCam(); return; }
+      $('camOff').style.display = 'none';
     }
   } catch(e){
     stopCam();
-    $('last').className = 'bad';
-    $('last').innerHTML = '카메라를 못 켰어요 <small>' + esc((e && e.name ? e.name + ': ' : '') + (e && e.message || e)) + ' — 브라우저 주소창 왼쪽 자물쇠에서 카메라 허용</small>';
+    $('camMsg').innerHTML = '카메라를 못 켰어요<br><small>' + esc((e && e.name ? e.name : '') ) + ' — 주소창 자물쇠에서 카메라 허용</small>';
   }
 }
-
 function stopCam(){
   running = false;
   if (zxReader) { try { zxReader.reset(); } catch(e){} zxReader = null; }
   if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
-  $('camwrap').style.display = 'none';
-  $('startBtn').style.display = ''; $('stopBtn').style.display = 'none';
+  $('camOff').style.display = 'flex'; $('camBtn').style.display = '';
+  $('camMsg').textContent = zone ? '카메라 꺼짐' : '구역을 고르면 카메라가 켜져요';
 }
+$('camBtn').onclick = function(){ if (!zone) openSheet('zoneSheet'); else startCam(); };
+document.addEventListener('visibilitychange', function(){ if (document.hidden) stopCam(); else if (slide === 2 && zone) startCam(); });
 
-$('startBtn').onclick = startCam;
-$('stopBtn').onclick = stopCam;
-
-$('photo').onchange = async function(){
-  var f = this.files[0]; this.value = ''; if (!f) return;
-  setStatus('사진 읽는 중…');
-  try {
-    var code = '';
-    if ('BarcodeDetector' in window) {
-      var bmp = await createImageBitmap(f);
-      var r = await new BarcodeDetector().detect(bmp);
-      if (r && r.length) code = r[0].rawValue;
-    }
-    if (!code) {
-      var url = URL.createObjectURL(f);
-      var res = await new ZXing.BrowserMultiFormatReader().decodeFromImageUrl(url);
-      URL.revokeObjectURL(url);
-      code = res.getText();
-    }
-    record(code); setStatus('사진에서 읽음');
-  } catch(e){
-    $('last').className = 'bad'; $('last').innerHTML = '사진에서 바코드를 못 찾았어요 <small>가까이·밝게 다시 찍어주세요</small>'; beep(false);
-  }
-};
-
-load();
+render(); load();
 setInterval(function(){ if (!document.hidden) load(); }, 15000);
 </script></body></html>
