@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A4 한 장 바코드 테스트</title>
+<style>
+@page{size:A4;margin:10mm}
+*{box-sizing:border-box}
+body{margin:0;background:#888;font-family:"Malgun Gothic",sans-serif;color:#111}
+.sheet{width:210mm;min-height:297mm;margin:10mm auto;background:#fff;padding:10mm}
+h1{font-size:13pt;margin:0 0 1mm}
+p{font-size:8.5pt;margin:0 0 3mm;color:#444}
+#grid{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:31mm;border-top:0.2mm solid #ddd;border-left:0.2mm solid #ddd}
+.cell{border-right:0.2mm solid #ddd;border-bottom:0.2mm solid #ddd;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1mm}
+.cell.x{background:#fff3f2}
+.name{font-size:8pt;font-weight:700;margin-bottom:0.8mm;white-space:nowrap}
+svg{width:34mm;height:auto;display:block}
+.code{font-family:monospace;font-size:7pt;letter-spacing:0.5px;margin-top:0.5mm}
+@media print{body{background:#fff}.sheet{margin:0;width:auto;min-height:0;padding:0}}
+</style></head><body>
+<div class="sheet">
+<h1>「📸 한 장에 여러 개 찍기」 테스트 — A4 한 장 32개</h1>
+<p>A4에 인쇄하거나 모니터에 크게 띄우고, 종이 전체가 화면에 들어오게 한 번에 찍으세요. 31개 색상 + 마지막 1칸(분홍)은 <b>목록에 없는 바코드</b> → 빨간 표시가 정상. 테스트 후 저장했다면 「마지막 스캔 취소」로 지우세요.</p>
+<div id="grid"></div>
+</div>
+<script>
+var ITEMS=[["모노블랙","8809543725492"],["네이비블루","8809543725508"],["보르도브라운","8809543727441"],["멜롯브라운","8809543729322"],["토프","8809543728851"],["토피브라운","8809543725539"],["인디고브라운","8809543725553"],["세이브라운","8800249967988"],["하바나브라운","8809543725546"],["타르투포","8800249966509"],["NQ5브라운","8809543725560"],["어스브라운","8809543727434"],["새들브라운","8809543725577"],["듄베이지","8809543725584"],["피칸브라운","8809543727410"],["카멜","8809543725591"],["에크루카멜","8809543729513"],["올리브브라운","8809543726680"],["웜그레이","8809543725607"],["프로즌그레이","8800249965021"],["라이트그레이","8809543725614"],["화이트","8800249965205"],["글레시어화이트","8809543727458"],["바닐라베이지","8809543725621"],["라이트베이지","8809543727427"],["코튼베이지","8809543725638"],["카키","8809543725645"],["그린","8809543725652"],["마션브라운","8809543729407"],["레드","8809543725669"],["버건디","8809543725676"]];
+var L=["0001101","0011001","0010011","0111101","0100011","0110001","0101111","0111011","0110111","0001011"];
+var G=["0100111","0110011","0011011","0100001","0011101","0111001","0000101","0010001","0001001","0010111"];
+var R=L.map(function(s){return s.replace(/./g,function(c){return c==="0"?"1":"0";});});
+var P=["LLLLLL","LLGLGG","LLGGLG","LLGGGL","LGLLGG","LGGLLG","LGGGLL","LGLGLG","LGLGGL","LGGLGL"];
+function check(d12){var s=0;for(var i=0;i<12;i++)s+=(+d12[i])*(i%2?3:1);return String((10-s%10)%10);}
+function bits(c){var f=+c[0],b="101";for(var i=1;i<=6;i++)b+=(P[f][i-1]==="L"?L:G)[+c[i]];b+="01010";for(i=7;i<=12;i++)b+=R[+c[i]];return b+"101";}
+function svg(c){var b=bits(c),q=9,w=b.length+q*2,h=50,r="";
+  for(var i=0;i<b.length;i++){if(b[i]!=="1")continue;var guard=i<3||(i>=45&&i<50)||i>=92;r+='<rect x="'+(i+q)+'" y="0" width="1" height="'+(guard?h+4:h)+'"/>';}
+  return '<svg viewBox="0 0 '+w+' '+(h+4)+'" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><g fill="#000">'+r+'</g></svg>';}
+var base="490123456789", unknown=base+check(base);
+var all=ITEMS.concat([["⚠ 목록에 없음",unknown,1]]);
+document.getElementById("grid").innerHTML=all.map(function(it,i){return '<div class="cell'+(it[2]?' x':'')+'"><div class="name">'+(i+1)+'. '+it[0]+'</div>'+svg(it[1])+'<div class="code">'+it[1]+'</div></div>';}).join('');
+</script></body></html>
