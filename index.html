@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>AIMBAN 재고 스캔</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#111;color:#eee}
+#top{padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font-size:16px;padding:10px 14px;border:0;border-radius:10px;background:#2d6cdf;color:#fff}
+button.gray{background:#444}
+button.red{background:#c0392b}
+button:disabled{opacity:.45}
+#camwrap{position:relative;background:#000;display:none}
+video{width:100%;max-height:45vh;object-fit:cover;display:block}
+#guide{position:absolute;left:10%;right:10%;top:40%;height:20%;border:3px solid rgba(0,255,120,.8);border-radius:8px;pointer-events:none}
+#last{margin:8px 12px;padding:14px;border-radius:12px;background:#222;font-size:22px;font-weight:700;min-height:60px}
+#last.ok{background:#1e7e34}
+#last.bad{background:#b03a2e}
+#last small{display:block;font-size:13px;font-weight:400;opacity:.85;margin-top:4px}
+#row2{display:flex;gap:8px;padding:0 12px;align-items:center}
+#row2 input{font-size:18px;padding:8px;border-radius:8px;border:0}
+#manual{flex:1;min-width:0}
+#qty{width:70px;text-align:center}
+#status{padding:4px 12px;font-size:13px;opacity:.8}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td{padding:7px 12px;border-bottom:1px solid #2a2a2a}
+td.n{text-align:right;font-weight:700;width:70px}
+tr.hit td{background:#1e4d2b}
+#total{padding:8px 12px;font-weight:700;font-size:17px}
+</style></head><body>
+<div id="top">
+  <button id="startBtn">📷 카메라 시작</button>
+  <button id="stopBtn" class="gray" style="display:none">정지</button>
+  <button class="gray" type="button" onclick="document.getElementById('photo').click()">사진으로</button>
+  <input id="photo" type="file" accept="image/*" capture="environment" style="display:none">
+  <button id="undoBtn" class="red" disabled>↩ 방금 것 취소</button>
+</div>
+<div id="camwrap"><video id="v" playsinline muted></video><div id="guide"></div></div>
+<div id="last">바코드를 비추세요</div>
+<div id="row2">
+  <input id="manual" inputmode="numeric" placeholder="직접 입력 / 스캐너 (엔터)">
+  <span>수량</span><input id="qty" type="number" min="1" value="1">
+</div>
+<div id="status">불러오는 중…</div>
+<div id="total"></div>
+<table id="list"></table>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+var API = 'https://script.google.com/macros/s/AKfycbwXAU2l7IycLGX_NiY7xMhbINn7lMiPaEQce6IfXmS5Pfui7ehSAzik4Rov8NzGVe8/exec';
+var LIST = [], MAP = {}, pending = {}, hist = [];
+var lastCode = '', lastSeen = 0, stream = null, detector = null, zxReader = null, running = false;
+var $ = function(id){ return document.getElementById(id); };
+
+function api(params){
+  var q = Object.keys(params).map(function(k){ return k + '=' + encodeURIComponent(params[k]); }).join('&');
+  return fetch(API + '?' + q + '&t=' + Date.now(), { redirect: 'follow' })
+    .then(function(r){ return r.json(); })
+    .then(function(d){ if (!d.ok && d.error) throw new Error(d.error); return d; });
+}
+
+function setStatus(t){ $('status').textContent = t; }
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function render(hit){
+  var rows = '', total = 0;
+  LIST.forEach(function(p){
+    var q = p.qty + (pending[p.code] || 0); total += q;
+    rows += '<tr class="' + (p.code === hit ? 'hit' : '') + '"><td>' + esc(p.name) + '<br><small style="opacity:.6">' + esc(p.code) + '</small></td><td class="n">' + q + '</td></tr>';
+  });
+  $('list').innerHTML = rows;
+  $('total').textContent = '합계 ' + total + '개';
+}
+
+function load(){
+  api({ action: 'list' }).then(function(d){
+    LIST = d.list; MAP = {}; LIST.forEach(function(p){ MAP[p.code] = p; });
+    render(); setStatus('시트와 동기화됨 ' + new Date().toLocaleTimeString());
+  }).catch(function(e){ setStatus('목록 불러오기 실패: ' + e.message); });
+}
+
+var ac = null;
+function beep(ok){
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    var o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = ok ? 1500 : 300; o.connect(g); g.connect(ac.destination);
+    g.gain.value = 0.15; o.start(); o.stop(ac.currentTime + (ok ? 0.08 : 0.35));
+  } catch(e){}
+  if (navigator.vibrate) navigator.vibrate(ok ? 40 : [100,60,100]);
+}
+
+function record(raw){
+  var code = String(raw || '').replace(/\s/g, '');
+  if (!code) return;
+  if (code.length === 12 && MAP['0' + code]) code = '0' + code;
+  var qty = Math.max(1, parseInt($('qty').value, 10) || 1);
+  $('qty').value = 1;
+  var p = MAP[code];
+  var el = $('last');
+  if (p) { el.className = 'ok'; el.innerHTML = esc(p.name) + (qty > 1 ? ' ×' + qty : '') + ' <small>' + esc(code) + ' · 기록 중…</small>'; beep(true); }
+  else { el.className = 'bad'; el.innerHTML = '⚠ 목록에 없음' + (qty > 1 ? ' ×' + qty : '') + ' <small>' + esc(code) + ' · 시트에는 기록됨</small>'; beep(false); }
+  pending[code] = (pending[code] || 0) + qty;
+  render(code);
+  api({ action: 'add', code: code, qty: qty }).then(function(r){
+    hist.push({ row: r.start, code: code, qty: qty });
+    $('undoBtn').disabled = false;
+    var sm = el.querySelector('small');
+    if (p && sm) sm.textContent = code + ' · 기록됨 (' + r.start + '행)';
+    if (MAP[code]) MAP[code].qty += qty;
+    pending[code] -= qty; render(code);
+  }).catch(function(e){
+    pending[code] -= qty; render();
+    el.className = 'bad'; el.innerHTML = '기록 실패! 다시 찍어주세요 <small>' + esc(e.message) + '</small>'; beep(false);
+  });
+}
+
+function onDetected(code){
+  var now = Date.now();
+  // 같은 바코드는 화면에서 0.8초 이상 사라졌다가 다시 보여야 한 번 더 셈
+  if (code === lastCode && now - lastSeen < 800) { lastSeen = now; return; }
+  lastCode = code; lastSeen = now;
+  record(code);
+}
+
+$('undoBtn').onclick = function(){
+  var h = hist.pop(); if (!h) return;
+  $('undoBtn').disabled = hist.length === 0;
+  api({ action: 'undo', row: h.row, code: h.code }).then(function(d){
+    var ok = d.ok;
+    if (ok && MAP[h.code]) MAP[h.code].qty -= h.qty;
+    $('last').className = ''; $('last').innerHTML = ok ? '취소함: ' + esc((MAP[h.code] || {}).name || h.code) + ' <small>' + h.row + '행 지움</small>' : '취소 못함 (그 줄이 바뀜)';
+    render();
+  }).catch(function(e){ $('last').className = 'bad'; $('last').innerHTML = '취소 실패 <small>' + esc(e.message) + '</small>'; });
+};
+
+$('manual').addEventListener('keydown', function(e){
+  if (e.key === 'Enter') { e.preventDefault(); record(this.value); this.value = ''; }
+});
+
+async function startCam(){
+  $('camwrap').style.display = 'block';
+  $('startBtn').style.display = 'none'; $('stopBtn').style.display = '';
+  running = true;
+  var formats = ['ean_13', 'ean_8', 'upc_a', 'code_128'];
+  try {
+    if ('BarcodeDetector' in window) {
+      var sup = await BarcodeDetector.getSupportedFormats();
+      if (sup.indexOf('ean_13') >= 0) detector = new BarcodeDetector({ formats: formats.filter(function(f){ return sup.indexOf(f) >= 0; }) });
+    }
+  } catch(e){ detector = null; }
+  try {
+    if (detector) {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      var v = $('v'); v.srcObject = stream; await v.play();
+      setStatus('카메라 켜짐 (기본 인식기)');
+      var loop = async function(){
+        if (!running) return;
+        try { var r = await detector.detect(v); if (r && r.length) onDetected(r[0].rawValue); } catch(e){}
+        setTimeout(loop, 80);
+      };
+      loop();
+    } else {
+      var hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.CODE_128]);
+      zxReader = new ZXing.BrowserMultiFormatReader(hints, 150);
+      await zxReader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, $('v'), function(res){
+        if (res) onDetected(res.getText());
+      });
+      setStatus('카메라 켜짐 (ZXing)');
+    }
+  } catch(e){
+    stopCam();
+    $('last').className = 'bad';
+    $('last').innerHTML = '카메라를 못 켰어요 <small>' + esc((e && e.name ? e.name + ': ' : '') + (e && e.message || e)) + ' — 브라우저 주소창 왼쪽 자물쇠에서 카메라 허용</small>';
+  }
+}
+
+function stopCam(){
+  running = false;
+  if (zxReader) { try { zxReader.reset(); } catch(e){} zxReader = null; }
+  if (stream) { stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  $('camwrap').style.display = 'none';
+  $('startBtn').style.display = ''; $('stopBtn').style.display = 'none';
+}
+
+$('startBtn').onclick = startCam;
+$('stopBtn').onclick = stopCam;
+
+$('photo').onchange = async function(){
+  var f = this.files[0]; this.value = ''; if (!f) return;
+  setStatus('사진 읽는 중…');
+  try {
+    var code = '';
+    if ('BarcodeDetector' in window) {
+      var bmp = await createImageBitmap(f);
+      var r = await new BarcodeDetector().detect(bmp);
+      if (r && r.length) code = r[0].rawValue;
+    }
+    if (!code) {
+      var url = URL.createObjectURL(f);
+      var res = await new ZXing.BrowserMultiFormatReader().decodeFromImageUrl(url);
+      URL.revokeObjectURL(url);
+      code = res.getText();
+    }
+    record(code); setStatus('사진에서 읽음');
+  } catch(e){
+    $('last').className = 'bad'; $('last').innerHTML = '사진에서 바코드를 못 찾았어요 <small>가까이·밝게 다시 찍어주세요</small>'; beep(false);
+  }
+};
+
+load();
+setInterval(function(){ if (!document.hidden) load(); }, 15000);
+</script></body></html>
