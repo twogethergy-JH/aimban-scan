@@ -113,6 +113,14 @@ h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
 #mRetake{flex:0 0 34%;background:#eee;color:#333;font-size:18px;font-weight:700}
 #mSave{flex:1;height:96px;background:var(--green);color:#fff;font-size:26px;font-weight:900}
 #mSave:disabled{background:#bbb}
+#aim{position:fixed;inset:0;z-index:19;background:#000;display:none;flex-direction:column}
+#aim.on{display:flex}
+#aimV{flex:1;min-height:0;width:100%;object-fit:contain;background:#000}
+#aimHint{position:absolute;left:0;right:0;top:0;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;background:rgba(0,0,0,.55);color:#fff;font-size:18px;font-weight:700;text-align:center}
+#aimHint small{font-size:14px;font-weight:500;color:#ddd}
+#aim .btns{display:flex;gap:12px;padding:12px 14px calc(12px + env(safe-area-inset-bottom))}
+#aimCancel{flex:0 0 34%;background:#444;color:#fff;font-size:20px;font-weight:800}
+#aimShot{flex:1;height:96px;background:var(--green);color:#fff;font-size:28px;font-weight:900}
 #mBusy{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.6);color:#fff;display:none;align-items:center;justify-content:center;font-size:24px;font-weight:800}
 #mBusy.on{display:flex}
 
@@ -191,6 +199,12 @@ h2{font-size:15px;color:#666;margin:6px 2px 10px;font-weight:600}
     <div id="mList" class="card"></div>
   </div>
   <div class="btns"><button id="mRetake">↺ 다시 찍기</button><button id="mSave">저장</button></div>
+</div>
+<!-- 한 장에 여러 개: 조준 화면 (찍히는 범위 그대로) -->
+<div id="aim">
+  <video id="aimV" playsinline muted></video>
+  <div id="aimHint">종이·상자 <b>전체가 화면에 꽉 차게</b> 가까이 대세요<br><small>바코드가 작게 보이면 못 읽어요 · 흔들리지 않게</small></div>
+  <div class="btns"><button id="aimCancel">✕ 취소</button><button id="aimShot">📸 찍기</button></div>
 </div>
 <div id="mBusy">📸 읽는 중…</div>
 
@@ -543,7 +557,13 @@ var MF = null;   // {img, found:[{code,x,y,w,h}]}
 async function grabPhoto(){
   try {
     if (stream && 'ImageCapture' in window) {
-      var blob = await new ImageCapture(stream.getVideoTracks()[0]).takePhoto();
+      var ic = new ImageCapture(stream.getVideoTracks()[0]), blob = null;
+      // 카메라가 낼 수 있는 가장 큰 해상도로
+      try {
+        var caps = await ic.getPhotoCapabilities();
+        if (caps && caps.imageWidth && caps.imageWidth.max) blob = await ic.takePhoto({ imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max });
+      } catch(e0){ blob = null; }
+      if (!blob) blob = await ic.takePhoto();
       return await createImageBitmap(blob);
     }
   } catch(e){}
@@ -564,18 +584,50 @@ async function detectAll(img){
       if (!dup) found.push(f);
     });
   }
-  add(await detector.detect(img), 0, 0, 1);
-  // 작게 찍힌 바코드도 잡도록 겹치게 잘라서 확대해 한 번 더
-  var tw = W * 0.6, th = H * 0.45, s = Math.min(2, 2000 / tw);
+  var det = multiDetector();
+  add(await det.detect(img), 0, 0, 1);
+  // 작게 찍힌 바코드도 잡도록 가로 3 × 세로 4로 겹치게 잘라 확대해서 한 번 더
+  var tw = W * 0.45, th = H * 0.34, s = Math.min(2.5, Math.max(1, 1600 / tw));
   var cv = document.createElement('canvas'), cx2 = cv.getContext('2d');
   cv.width = Math.round(tw * s); cv.height = Math.round(th * s);
-  var xs = [0, W - tw], ys = [0, (H - th) / 2, H - th];
+  var xs = [0, (W - tw) / 2, W - tw], ys = [0, (H - th) / 3, (H - th) * 2 / 3, H - th];
   for (var i = 0; i < xs.length; i++) for (var j = 0; j < ys.length; j++) {
     cx2.fillStyle = '#fff'; cx2.fillRect(0, 0, cv.width, cv.height);
     cx2.drawImage(img, xs[i], ys[j], tw, th, 0, 0, cv.width, cv.height);
-    try { add(await detector.detect(cv), xs[i], ys[j], s); } catch(e){}
+    try { add(await det.detect(cv), xs[i], ys[j], s); } catch(e){}
   }
-  return found;
+  // 같은 자리에서 목록에 있는 바코드와 없는 바코드가 같이 읽혔으면, 없는 쪽은 잘못 읽은 것 → 버림
+  return found.filter(function(f){
+    if (CMAP[f.code]) return true;
+    var cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+    return !found.some(function(o){
+      return CMAP[o.code] && cx > o.x && cx < o.x + o.w && cy > o.y - o.h * 0.5 && cy < o.y + o.h * 1.5;
+    });
+  });
+}
+// 여러 개 읽기 전용: 상품목록 바코드가 전부 13자리면 EAN-13만 읽음 (작은 바코드 일부를 짧은 형식으로 잘못 읽는 것 방지)
+var mDet = null;
+function multiDetector(){
+  if (mDet) return mDet;
+  var codes = Object.keys(CMAP);
+  var all13 = codes.length && codes.every(function(c){ return /^\d{13}$/.test(c); });
+  try { mDet = all13 ? new BarcodeDetector({ formats: ['ean_13'] }) : detector; } catch(e){ mDet = detector; }
+  return mDet;
+}
+// 조준 화면: 실제로 찍히는 범위 전체를 보여줌 (작은 미리보기는 가운데만 잘려 보여서 종이가 작게 찍혔음)
+function openAim(){
+  if (!zone) { openSheet('zoneSheet'); return; }
+  if (!detector) { toast('이 휴대폰 브라우저는 여러 개 읽기를 못 해요 (안드로이드 크롬 필요)'); return; }
+  if (!running || !stream) { toast('카메라를 먼저 켜세요'); return; }
+  paused = true;
+  var av = $('aimV'); av.srcObject = stream; av.play().catch(function(){});
+  $('aim').classList.add('on');
+  try { history.pushState({ aim: 1 }, ''); } catch(e){}
+}
+function closeAim(fromBack){
+  if (!$('aim').classList.contains('on')) return;
+  $('aim').classList.remove('on'); $('aimV').srcObject = null;
+  if (!fromBack) { try { if (history.state && history.state.aim) history.back(); } catch(e){} }
 }
 async function multiShot(){
   if (!zone) { openSheet('zoneSheet'); return; }
@@ -585,12 +637,17 @@ async function multiShot(){
   $('mBusy').classList.add('on');
   try {
     var img = await grabPhoto();
+    if ($('aim').classList.contains('on')) {
+      // 조준 화면 기록을 결과 화면 기록으로 바꿔치기 (뒤로가기 한 번에 일반 스캔)
+      $('aim').classList.remove('on'); $('aimV').srcObject = null;
+      try { if (history.state && history.state.aim) history.back(); } catch(e){}
+    }
     var found = await detectAll(img);
     MF = { img: img, found: found };
     if (navigator.vibrate) navigator.vibrate(found.length ? 200 : [400, 150, 400]);
     showMulti();
   } catch(e){
-    toast('사진 읽기 실패: ' + (e && e.message || e)); paused = false;
+    toast('사진 읽기 실패: ' + (e && e.message || e)); closeAim(); paused = false;
   }
   $('mBusy').classList.remove('on');
 }
@@ -640,15 +697,19 @@ async function closeMulti(fromBack){
   if (!fromBack) { try { if (history.state && history.state.multi) history.back(); } catch(e){} }
   await resetScan();
 }
-window.addEventListener('popstate', function(){ if ($('multi').classList.contains('on')) closeMulti(true); });
-$('multiBtn').onclick = multiShot;
+window.addEventListener('popstate', function(){
+  if ($('multi').classList.contains('on')) closeMulti(true);
+  else if ($('aim').classList.contains('on')) { closeAim(true); paused = false; }
+});
+$('multiBtn').onclick = openAim;
+$('aimShot').onclick = multiShot;
+$('aimCancel').onclick = function(){ closeAim(); paused = false; };
 $('mClose').onclick = function(){ closeMulti(); };
 $('mRetake').onclick = async function(){
   $('mBusy').classList.add('on');
   await closeMulti();
-  await new Promise(function(r){ setTimeout(r, 800); });   // 카메라 밝기 맞출 시간
   $('mBusy').classList.remove('on');
-  multiShot();
+  openAim();
 };
 $('mSave').onclick = function(){
   if (!MF || !MF.cnt) return;
